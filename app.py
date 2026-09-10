@@ -23,7 +23,7 @@ RAILWAY_PROJECT_ID = os.environ.get("RAILWAY_PROJECT_ID", "")
 RAILWAY_ENVIRONMENT_ID = os.environ.get("RAILWAY_ENVIRONMENT_ID", "")
 RAILWAY_API = "https://backboard.railway.com/graphql/v2"
 FIREFOX_IMAGE = "lscr.io/linuxserver/firefox:latest"
-FERNET = Fernet(base64.urlsafe_b64encode(hashlib.sha256(app_secret := os.environ.get("SECRET_KEY", "")).digest()))
+FERNET = Fernet(base64.urlsafe_b64encode(hashlib.sha256(os.environ.get("SECRET_KEY", "").encode()).digest()))
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_urlsafe(48))
