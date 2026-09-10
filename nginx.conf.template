@@ -9,9 +9,9 @@ http {
         server_name _;
         client_max_body_size 50m;
 
-        location /_auth/ {
+        location ~ ^/_auth/([^/]+)$ {
             internal;
-            proxy_pass http://127.0.0.1:__API_PORT__/internal/auth/;
+            proxy_pass http://127.0.0.1:__API_PORT__/internal/auth/$1;
             proxy_pass_request_body off;
             proxy_set_header Content-Length "";
         }
