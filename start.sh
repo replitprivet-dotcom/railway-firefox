@@ -4,6 +4,8 @@ set -eu
 : "${PORT:=8080}"
 : "${API_PORT:=5000}"
 
+cd /opt/railway-firefox
+
 if [ -z "${ADMIN_API_KEY:-}" ]; then
   echo "ERROR: ADMIN_API_KEY must be set" >&2
   exit 1
