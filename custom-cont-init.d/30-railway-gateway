@@ -1,0 +1,4 @@
+#!/command/with-contenv bash
+set -e
+# Launch the Railway gateway alongside the inherited LinuxServer Firefox services.
+/opt/railway-firefox/start.sh >/var/log/railway-gateway.log 2>&1 &
