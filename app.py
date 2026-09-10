@@ -55,7 +55,7 @@ def valid_key(value):
 
 def api_call(query, variables):
     payload = json.dumps({"query": query, "variables": variables}).encode()
-    req = urllib.request.Request(RAILWAY_API, data=payload, headers={"Authorization": f"Bearer {RAILWAY_API_TOKEN}", "Content-Type": "application/json"})
+    req = urllib.request.Request(RAILWAY_API, data=payload, headers={"Authorization": f"Bearer {RAILWAY_API_TOKEN}", "Content-Type": "application/json", "User-Agent": "curl/8.5.0 railway-firefox-gateway"})
     with urllib.request.urlopen(req, timeout=45) as response:
         data = json.loads(response.read())
     if data.get("errors"):
