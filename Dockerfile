@@ -17,8 +17,8 @@ RUN chmod +x /opt/railway-firefox/start.sh \
 
 # Keep the LinuxServer image's /init entrypoint so Firefox and its s6 services start normally.
 COPY custom-cont-init.d/10-railway-data /etc/cont-init.d/10-railway-data
-COPY custom-cont-init.d/30-railway-gateway /etc/cont-init.d/30-railway-gateway
-RUN chmod +x /etc/cont-init.d/10-railway-data /etc/cont-init.d/30-railway-gateway
+COPY s6-rc.d /etc/s6-overlay/s6-rc.d
+RUN chmod +x /etc/cont-init.d/10-railway-data /etc/s6-overlay/s6-rc.d/railway-gateway/run
 
 ENV API_PORT=5000
 ENV PORT=8080
