@@ -1,0 +1,5 @@
+#!/command/with-contenv bash
+set -e
+mkdir -p /data
+# The base image normally runs as root (PUID/PGID are supported); keep SQLite writable.
+chmod 700 /data
