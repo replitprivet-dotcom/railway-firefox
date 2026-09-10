@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import hmac
 import json
 import os
@@ -8,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template_string, request
+from cryptography.fernet import Fernet
 from werkzeug.security import check_password_hash, generate_password_hash
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
@@ -20,6 +23,7 @@ RAILWAY_PROJECT_ID = os.environ.get("RAILWAY_PROJECT_ID", "")
 RAILWAY_ENVIRONMENT_ID = os.environ.get("RAILWAY_ENVIRONMENT_ID", "")
 RAILWAY_API = "https://backboard.railway.com/graphql/v2"
 FIREFOX_IMAGE = "lscr.io/linuxserver/firefox:latest"
+FERNET = Fernet(base64.urlsafe_b64encode(hashlib.sha256(app_secret := os.environ.get("SECRET_KEY", "")).digest()))
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_urlsafe(48))
@@ -38,10 +42,10 @@ def init_db():
         conn.execute("""CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, endpoint TEXT UNIQUE NOT NULL,
             created_at TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
-            railway_service_id TEXT, backend_url TEXT
+            railway_service_id TEXT, backend_url TEXT, backend_auth TEXT
         )""")
         # Upgrade databases created by the earlier gateway version.
-        for column in ("railway_service_id TEXT", "backend_url TEXT"):
+        for column in ("railway_service_id TEXT", "backend_url TEXT", "backend_auth TEXT"):
             try:
                 conn.execute(f"ALTER TABLE users ADD COLUMN {column}")
             except sqlite3.OperationalError:
@@ -63,14 +67,15 @@ def api_call(query, variables):
     return data["data"]
 
 
-def provision_firefox(username, password):
+def provision_firefox(username):
     if not (RAILWAY_API_TOKEN and RAILWAY_PROJECT_ID and RAILWAY_ENVIRONMENT_ID):
         raise RuntimeError("Railway provisioning variables are not configured")
     safe_name = "firefox-" + "".join(c if c.isalnum() else "-" for c in username.lower())[:35] + "-" + secrets.token_hex(4)
+    child_password = secrets.token_urlsafe(32)
     service = api_call("""mutation($input: ServiceCreateInput!){serviceCreate(input:$input){id name}}""", {"input": {
         "projectId": RAILWAY_PROJECT_ID, "environmentId": RAILWAY_ENVIRONMENT_ID, "name": safe_name,
         "source": {"image": FIREFOX_IMAGE},
-        "variables": {"PUID": "0", "PGID": "0", "TZ": os.environ.get("TZ", "Asia/Kolkata"), "CUSTOM_USER": username, "PASSWORD": password}
+        "variables": {"PUID": "0", "PGID": "0", "TZ": os.environ.get("TZ", "Asia/Kolkata"), "CUSTOM_USER": username, "PASSWORD": child_password}
     }})["serviceCreate"]
     service_id = service["id"]
     api_call("""mutation($input: VolumeCreateInput!){volumeCreate(input:$input){id}}""", {"input": {
@@ -80,7 +85,8 @@ def provision_firefox(username, password):
     domain = api_call("""mutation($input: ServiceDomainCreateInput!){serviceDomainCreate(input:$input){domain}}""", {"input": {
         "serviceId": service_id, "environmentId": RAILWAY_ENVIRONMENT_ID, "targetPort": 3000
     }})["serviceDomainCreate"]["domain"]
-    return service_id, domain
+    basic = "Basic " + base64.b64encode(f"{username}:{child_password}".encode()).decode()
+    return service_id, domain, FERNET.encrypt(basic.encode()).decode()
 
 
 @app.before_request
@@ -107,10 +113,10 @@ def add_user():
         return jsonify(status="error", error="username is required and password must be at least 8 characters"), 400
     endpoint = secrets.token_urlsafe(18).replace("-", "").replace("_", "")
     try:
-        service_id, backend = provision_firefox(username, password)
+        service_id, backend, backend_auth = provision_firefox(username)
         with db() as conn:
-            conn.execute("INSERT INTO users(username,password_hash,endpoint,created_at,active,railway_service_id,backend_url) VALUES(?,?,?,?,1,?,?)",
-                         (username, generate_password_hash(password), endpoint, datetime.now(timezone.utc).isoformat(), service_id, backend))
+            conn.execute("INSERT INTO users(username,password_hash,endpoint,created_at,active,railway_service_id,backend_url,backend_auth) VALUES(?,?,?,?,1,?,?,?)",
+                         (username, generate_password_hash(password), endpoint, datetime.now(timezone.utc).isoformat(), service_id, backend, backend_auth))
             conn.commit()
     except sqlite3.IntegrityError:
         return jsonify(status="error", error="username already exists"), 409
@@ -142,11 +148,12 @@ def delete_user():
 @app.get("/internal/auth/<endpoint>")
 def internal_auth(endpoint):
     with db() as conn:
-        user = conn.execute("SELECT backend_url FROM users WHERE endpoint=? AND active=1", (endpoint,)).fetchone()
+        user = conn.execute("SELECT backend_url, backend_auth FROM users WHERE endpoint=? AND active=1", (endpoint,)).fetchone()
     if not user or not user["backend_url"]:
         return ("", 404)
     response = app.response_class("", status=204)
     response.headers["X-Backend"] = user["backend_url"]
+    response.headers["X-Backend-Auth"] = FERNET.decrypt(user["backend_auth"].encode()).decode()
     return response
 
 
