@@ -21,4 +21,5 @@ COPY custom-cont-init.d/30-railway-gateway /etc/cont-init.d/30-railway-gateway
 RUN chmod +x /etc/cont-init.d/10-railway-data /etc/cont-init.d/30-railway-gateway
 
 ENV API_PORT=5000
-EXPOSE 3000
+ENV PORT=8080
+EXPOSE 8080
