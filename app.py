@@ -115,10 +115,17 @@ def add_user():
     try:
         service_id, backend, backend_auth = provision_firefox(username)
         with db() as conn:
-            conn.execute("INSERT INTO users(username,password_hash,endpoint,created_at,active,railway_service_id,backend_url,backend_auth) VALUES(?,?,?,?,1,?,?,?)",
-                         (username, generate_password_hash(password), endpoint, datetime.now(timezone.utc).isoformat(), service_id, backend, backend_auth))
+            old = conn.execute("SELECT active FROM users WHERE username=?", (username,)).fetchone()
+            if old and old["active"]:
+                raise ValueError("username already exists")
+            if old:
+                conn.execute("UPDATE users SET password_hash=?, endpoint=?, created_at=?, active=1, railway_service_id=?, backend_url=?, backend_auth=? WHERE username=?",
+                             (generate_password_hash(password), endpoint, datetime.now(timezone.utc).isoformat(), service_id, backend, backend_auth, username))
+            else:
+                conn.execute("INSERT INTO users(username,password_hash,endpoint,created_at,active,railway_service_id,backend_url,backend_auth) VALUES(?,?,?,?,1,?,?,?)",
+                             (username, generate_password_hash(password), endpoint, datetime.now(timezone.utc).isoformat(), service_id, backend, backend_auth))
             conn.commit()
-    except sqlite3.IntegrityError:
+    except (sqlite3.IntegrityError, ValueError):
         return jsonify(status="error", error="username already exists"), 409
     except Exception as exc:
         return jsonify(status="error", error=f"could not provision Firefox service: {exc}"), 502
