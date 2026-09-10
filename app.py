@@ -9,7 +9,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, redirect, render_template_string, request
 from cryptography.fernet import Fernet
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -162,6 +162,19 @@ def internal_auth(endpoint):
     response.headers["X-Backend"] = user["backend_url"]
     response.headers["X-Backend-Auth"] = FERNET.decrypt(user["backend_auth"].encode()).decode()
     return response
+
+
+@app.get("/internal/launch/<endpoint>")
+def internal_launch(endpoint):
+    with db() as conn:
+        user = conn.execute("SELECT backend_url, backend_auth FROM users WHERE endpoint=? AND active=1", (endpoint,)).fetchone()
+    if not user:
+        return jsonify(status="error", error="endpoint not found"), 404
+    basic = FERNET.decrypt(user["backend_auth"].encode()).decode()
+    raw = base64.b64decode(basic.removeprefix("Basic ")).decode()
+    child_user, child_password = raw.split(":", 1)
+    target = f"https://{child_user}:{child_password}@{user['backend_url']}/"
+    return redirect(target, code=302)
 
 
 @app.errorhandler(404)
